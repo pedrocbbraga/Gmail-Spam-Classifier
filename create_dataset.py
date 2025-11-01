@@ -31,6 +31,7 @@ GMAIL_QUERY  = 'in:inbox newer_than:1y'
 MAX_MESSAGES = None
 
 # Get OAuth credentials - boilerplate from Google
+# https://developers.google.com/workspace/gmail/api/quickstart/python?utm_source=chatgpt.com
 def get_creds() -> Credentials:
     creds = None
     if os.path.exists(TOKEN_FILE):
@@ -47,3 +48,14 @@ def get_creds() -> Credentials:
         with open(TOKEN_FILE, "w") as f:
             f.write(creds.to_json())
     return creds
+
+# Build Gmail API client - more boilerplate
+def build_client(creds: Credentials):
+    return build("gmail", "v1", credentials=creds)
+
+# print("check creds")
+# creds = get_creds()
+
+# print("build client")
+# service = build_client(creds)
+
