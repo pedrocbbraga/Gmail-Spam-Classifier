@@ -31,7 +31,7 @@ GMAIL_QUERY  = 'in:inbox newer_than:1y'
 MAX_MESSAGES = None
 
 # Get OAuth credentials - boilerplate from Google
-# https://developers.google.com/workspace/gmail/api/quickstart/python?utm_source=chatgpt.com
+# https://developers.google.com/workspace/gmail/api/quickstart/python
 def get_creds() -> Credentials:
     creds = None
     if os.path.exists(TOKEN_FILE):
@@ -59,3 +59,27 @@ def build_client(creds: Credentials):
 # print("build client")
 # service = build_client(creds)
 
+def decode_base64url(data: str) -> bytes:
+    decoded_bytes = base64.urlsafe_b64decode(data + "===")
+    return decoded_bytes
+
+# List message IDs - more boilerplate
+def list_messages(service, q: str = "", max_messages: Optional[int] = None) -> List[str]:
+    results = (
+            service.users().messages().list(userId="me", labelIds=["INBOX"]).execute()
+    )
+    messages = results.get("messages", [])
+
+    if not messages:
+        print("No messages found.")
+        return
+
+    print("Messages:")
+    for message in messages:
+        print(f'Message ID: {message["id"]}')
+        msg = (
+            service.users().messages().get(userId="me", id=message["id"]).execute()
+        )
+        print(f'  Subject: {msg["snippet"]}')
+
+list_messages(build_client(get_creds()))
