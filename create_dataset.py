@@ -3,6 +3,7 @@ import os
 import json
 import sys
 import time
+import tqdm
 from typing import List, Dict, Any, Optional
 from pathlib import Path
 from bs4 import BeautifulSoup
@@ -28,7 +29,7 @@ OUT_JSONL = "gmail_dataset.jsonl"
 
 # Input
 GMAIL_QUERY  = 'in:inbox newer_than:1y'
-MAX_MESSAGES = 500
+MAX_MESSAGES = 50
 
 # Get OAuth credentials - boilerplate from Google
 # https://developers.google.com/workspace/gmail/api/quickstart/python
@@ -103,3 +104,51 @@ ids = list_message_ids(build_client(get_creds()), GMAIL_QUERY, MAX_MESSAGES)
 
 # print(ids)
 print(f"Found {len(ids)} messages")
+
+def get_message_data(service, msg_id: str) -> Dict[str, Any]:
+    message = service.users().messages().get(userId="me", id=msg_id, format="full").execute()
+    payload = message.get("payload", {})
+    headers = payload.get("headers", [])
+    parts = payload.get("parts", [])
+    
+    # Extract relevant headers
+    subject = next((h["value"] for h in headers if h["name"] == "Subject"), "")
+    from_email = next((h["value"] for h in headers if h["name"] == "From"), "")
+    date = next((h["value"] for h in headers if h["name"] == "Date"), "")
+    
+    # Extract body content
+    body = ""
+    for part in parts:
+        if part.get("mimeType") == "text/html":
+            body_data = part.get("body", {}).get("data", "")
+            body = decode_base64url(body_data).decode("utf-8")
+            break
+        elif part.get("mimeType") == "text/plain":
+            body_data = part.get("body", {}).get("data", "")
+            body = decode_base64url(body_data).decode("utf-8")
+    
+    # Parse HTML to extract URLs
+    urls = []
+    if body:
+        soup = BeautifulSoup(body, "html.parser")
+        for a in soup.find_all("a", href=True):
+            urls.append(a["href"])
+    
+    return {
+        "id": msg_id,
+        "subject": subject,
+        "from": from_email,
+        "date": date,
+        "urls": urls,
+        "body": body
+    }
+
+def create_dataset(service, ids: List[str], out_file: str):
+    with open(out_file, "w") as f:
+        for i, msg_id in enumerate(ids):
+            print(f"Processing message {i+1}/{len(ids)}: {msg_id}")
+            msg_data = get_message_data(service, msg_id)
+            f.write(json.dumps(msg_data) + "\n")
+            time.sleep(0.1)  # To respect API rate limits
+
+create_dataset(build_client(get_creds()), ids, OUT_JSONL)
