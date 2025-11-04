@@ -28,7 +28,7 @@ OUT_JSONL = "gmail_dataset.jsonl"
 
 # Input
 GMAIL_QUERY  = 'in:inbox newer_than:1y'
-MAX_MESSAGES = None
+MAX_MESSAGES = 500
 
 # Get OAuth credentials - boilerplate from Google
 # https://developers.google.com/workspace/gmail/api/quickstart/python
@@ -63,23 +63,43 @@ def decode_base64url(data: str) -> bytes:
     decoded_bytes = base64.urlsafe_b64decode(data + "===")
     return decoded_bytes
 
-# List message IDs - more boilerplate
-def list_messages(service, q: str = "", max_messages: Optional[int] = None) -> List[str]:
-    results = (
-            service.users().messages().list(userId="me", labelIds=["INBOX"]).execute()
-    )
-    messages = results.get("messages", [])
+def list_message_ids(service, q: str = "", max_messages: Optional[int] = None) -> List[str]:
+    ids = []
+    next_page_token = None
+    request_args = {"userId": "me", "q": q}
 
-    if not messages:
-        print("No messages found.")
-        return
+    while True:
+        print("here")   
 
-    print("Messages:")
-    for message in messages:
-        print(f'Message ID: {message["id"]}')
-        msg = (
-            service.users().messages().get(userId="me", id=message["id"]).execute()
+        if next_page_token: # if page token exists, add to request
+            request_args["pageToken"] = next_page_token
+
+        results = ( # retrieve 100 ids at a time
+                service.users().messages().list(**request_args).execute()
         )
-        print(f'  Subject: {msg["snippet"]}')
 
-list_messages(build_client(get_creds()))
+        messages = results.get("messages", [])
+        if not messages:
+            print("no messages found")
+            break
+
+        ids.extend([message["id"] for message in messages]) # collect ids
+
+        if max_messages and len(ids) >= max_messages:
+            return ids[:max_messages] # return only up to max_messages if specified
+
+        next_page_token = results.get("nextPageToken", [])
+
+        if not next_page_token:
+            break
+
+    if max_messages:
+        return ids[:max_messages] # return only up to max_messages if specified
+    
+    return ids
+
+
+ids = list_message_ids(build_client(get_creds()), GMAIL_QUERY, MAX_MESSAGES)
+
+# print(ids)
+print(f"Found {len(ids)} messages")
