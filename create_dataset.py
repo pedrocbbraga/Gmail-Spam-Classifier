@@ -4,6 +4,8 @@ import json
 import sys
 import time
 import tqdm
+import unicodedata
+import re
 from typing import List, Dict, Any, Optional
 from pathlib import Path
 from bs4 import BeautifulSoup
@@ -29,7 +31,7 @@ OUT_JSONL = "gmail_dataset.jsonl"
 
 # Input
 GMAIL_QUERY  = 'in:inbox newer_than:1y'
-MAX_MESSAGES = 50
+MAX_MESSAGES = 5000
 
 # Get OAuth credentials - boilerplate from Google
 # https://developers.google.com/workspace/gmail/api/quickstart/python
@@ -105,6 +107,38 @@ ids = list_message_ids(build_client(get_creds()), GMAIL_QUERY, MAX_MESSAGES)
 # print(ids)
 print(f"Found {len(ids)} messages")
 
+# Helper function to strip emails from names
+def strip_email(email_str: str) -> str:
+    if "<" in email_str and ">" in email_str:
+        start = email_str.index("<") + 1
+        end = email_str.index(">")
+        return email_str[start:end]
+    return email_str
+
+# Helper function to clean invisible characters
+# https://www.fileformat.info/info/unicode/category/index.htm
+def clean_invisible_chars(text: str) -> str:
+    text = unicodedata.normalize("NFC", text)
+    cleaned_characters = []
+    
+    for character in text:
+        category = unicodedata.category(character)
+
+        if category[0] in ("C"): # control characters
+            cleaned_characters.append(character)
+        elif category.startswith(("Mn", "Me")) or category == "Cf": # non-spacing marks, enclosing marks, format characters
+            cleaned_characters.append(" ")
+        elif category[0] == "Z": # separator characters
+            cleaned_characters.append(" ")
+        else:
+            cleaned_characters.append(character)
+        
+    cleaned_body_la_ele = "".join(cleaned_characters)
+    cleaned_body_la_ele = re.sub(r"[\u00AD\u200B-\u200F\u202A-\u202E\u2060-\u206F\uFEFF\u034F]+", "", cleaned_body_la_ele)
+
+    return " ".join(cleaned_body_la_ele.split())
+
+# Get email data
 def get_message_data(service, msg_id: str) -> Dict[str, Any]:
     message = service.users().messages().get(userId="me", id=msg_id, format="full").execute()
     payload = message.get("payload", {})
@@ -114,6 +148,7 @@ def get_message_data(service, msg_id: str) -> Dict[str, Any]:
     # Extract relevant headers
     subject = next((h["value"] for h in headers if h["name"] == "Subject"), "")
     from_email = next((h["value"] for h in headers if h["name"] == "From"), "")
+    from_email = strip_email(from_email)
     date = next((h["value"] for h in headers if h["name"] == "Date"), "")
     
     # Extract body content
@@ -127,12 +162,29 @@ def get_message_data(service, msg_id: str) -> Dict[str, Any]:
             body_data = part.get("body", {}).get("data", "")
             body = decode_base64url(body_data).decode("utf-8")
     
-    # Parse HTML to extract URLs
+    # Parse HTML to extract URLs and clean up body text
     urls = []
+    clean_body_la_ele = ""
     if body:
         soup = BeautifulSoup(body, "html.parser")
+
+        for tag in soup(["script", "style", "head", "meta", "title"]):
+            tag.decompose()  # remove tags
+
         for a in soup.find_all("a", href=True):
             urls.append(a["href"])
+
+        clean_body_la_ele = soup.get_text(separator=" ", strip=True)
+        clean_body_la_ele = clean_invisible_chars(clean_body_la_ele)
+
+    body = clean_body_la_ele
+    urls = len(urls)
+
+
+    if 'UNREAD' in message.get('labelIds', []):
+        opened = False
+    else:
+        opened = True
     
     return {
         "id": msg_id,
@@ -140,7 +192,8 @@ def get_message_data(service, msg_id: str) -> Dict[str, Any]:
         "from": from_email,
         "date": date,
         "urls": urls,
-        "body": body
+        "body": body,
+        "opened": opened
     }
 
 def create_dataset(service, ids: List[str], out_file: str):
@@ -148,7 +201,8 @@ def create_dataset(service, ids: List[str], out_file: str):
         for i, msg_id in enumerate(ids):
             print(f"Processing message {i+1}/{len(ids)}: {msg_id}")
             msg_data = get_message_data(service, msg_id)
-            f.write(json.dumps(msg_data) + "\n")
-            time.sleep(0.1)  # To respect API rate limits
+            json.dump(msg_data, f, ensure_ascii=False)
+            f.write("\n")
+            time.sleep(0.1)  # to respect API rate limitation
 
 create_dataset(build_client(get_creds()), ids, OUT_JSONL)
