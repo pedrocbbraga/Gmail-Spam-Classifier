@@ -16,22 +16,36 @@ url_count = Y[:, 3].astype(int)
 spam_token_count = Y[:, 4].astype(int)
 is_opened = data["opened"].astype(int).to_numpy()
 
-coords = {"id": data.index}
+# Collect data and organize emails per unique sender
+# Need a list:
+# - sender email
+# list of email ids with respective url counts, spam token counts, opened status
+sender_email_data = {}
+for sender in unique_senders:
+    sender_indices = np.where(senders == sender)[0]
+    sender_url_counts = url_count[sender_indices]
+    sender_spam_token_counts = spam_token_count[sender_indices]
+    sender_is_opened = is_opened[sender_indices]
+    sender_email_data[sender] = {
+        "sender": sender,
+        "email_ids": Y[sender_indices, 0].tolist(),
+        "url_counts": sender_url_counts.tolist(),
+        "spam_token_counts": sender_spam_token_counts.tolist(),
+        "is_opened": sender_is_opened.tolist()
+    }
 
-current_sender = unique_senders[0]
-
-with pm.Model(coords=coords) as model:
-    url_count_data = pm.Data("url_count_data", url_count, dims="id")
+# with pm.Model(coords=coords) as model:
+#     url_count_data = pm.Data("url_count_data", url_count, dims="id")
 
 
-    t = pm.NegativeBinomial("t", mu=5, alpha=1, observed=spam_token_count[0]) # token count likelihood
+#     t = pm.NegativeBinomial("t", mu=5, alpha=1, observed=spam_token_count[0]) # token count likelihood
 
-    u = pm.NegativeBinomial("u", mu=2, alpha=1, observed=url_count[0]) # url count likelihood
+#     u = pm.NegativeBinomial("u", mu=2, alpha=1, observed=url_count[0]) # url count likelihood
 
-    p_o = pm.Beta("p_o", alpha=2, beta=2, observed=is_opened[0]) # opened prior
-    o = pm.Bernoulli("o", p=p_o) # opened likelihood
+#     p_o = pm.Beta("p_o", alpha=2, beta=2, observed=is_opened[0]) # opened prior
+#     o = pm.Bernoulli("o", p=p_o) # opened likelihood
 
-    p_y = pm.Beta("p_y", alpha=2, beta=2) # prior prior
-    y = pm.Bernoulli("y", p=p_y, dims="id") # prior
+#     p_y = pm.Beta("p_y", alpha=2, beta=2) # prior prior
+#     y = pm.Bernoulli("y", p=p_y, dims="id") # prior
 
-    trace = pm.sample(1000, tune=1000, target_accept=0.9, return_inferencedata=True)
+#     trace = pm.sample(1000, tune=1000, target_accept=0.9, return_inferencedata=True)
