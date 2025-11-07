@@ -9,111 +9,17 @@ import re
 from typing import List, Dict, Any, Optional
 from pathlib import Path
 from bs4 import BeautifulSoup
+from email import policy
+from email.parser import BytesParser
 
-from google.oauth2.credentials import Credentials
-from google_auth_oauthlib.flow import InstalledAppFlow
-from googleapiclient.discovery import build
-from google.auth.transport.requests import Request
-
-# Steps:
-# Load config
-# Define input query
-# get OAuth credentials
-# Build GmailAPI client
-# List message IDs
-# For each ID, get: tokens, URLS, opened status, date
-
-# Load config
-SCOPES = ["https://www.googleapis.com/auth/gmail.readonly"]
-CLIENT_SECRET = "client_secret.json"
-TOKEN_FILE = "token.json"
+# File paths
+IDS_PATH = "./spam/"
 OUT_JSONL = "spamtoken_dataset.jsonl"
 
-# Input
-GMAIL_QUERY  = 'in:inbox newer_than:1y'
-MAX_MESSAGES = 10
-
-# Get OAuth credentials - boilerplate from Google
-# https://developers.google.com/workspace/gmail/api/quickstart/python
-def get_creds() -> Credentials:
-    creds = None
-    if os.path.exists(TOKEN_FILE):
-        creds = Credentials.from_authorized_user_file(TOKEN_FILE, SCOPES)
-    if not creds or not creds.valid:
-        if creds and creds.expired and creds.refresh_token:
-            creds.refresh(Request())
-        else:
-            if not os.path.exists(CLIENT_SECRET):
-                print("Missing client_secret.json", file=sys.stderr)
-                sys.exit(1)
-            flow = InstalledAppFlow.from_client_secrets_file(CLIENT_SECRET, SCOPES)
-            creds = flow.run_local_server(port=0, prompt="consent")
-        with open(TOKEN_FILE, "w") as f:
-            f.write(creds.to_json())
-    return creds
-
-# Build Gmail API client - more boilerplate
-def build_client(creds: Credentials):
-    return build("gmail", "v1", credentials=creds)
-
-# print("check creds")
-# creds = get_creds()
-
-# print("build client")
-# service = build_client(creds)
-
-def decode_base64url(data: str) -> bytes:
-    decoded_bytes = base64.urlsafe_b64decode(data + "===")
-    return decoded_bytes
-
-def list_message_ids(service, q: str = "", max_messages: Optional[int] = None) -> List[str]:
-    ids = []
-    next_page_token = None
-    request_args = {"userId": "me", "q": q}
-
-    while True:
-        print("here")   
-
-        if next_page_token: # if page token exists, add to request
-            request_args["pageToken"] = next_page_token
-
-        results = ( # retrieve 100 ids at a time
-                service.users().messages().list(**request_args).execute()
-        )
-
-        messages = results.get("messages", [])
-        if not messages:
-            print("no messages found")
-            break
-
-        ids.extend([message["id"] for message in messages]) # collect ids
-
-        if max_messages and len(ids) >= max_messages:
-            return ids[:max_messages] # return only up to max_messages if specified
-
-        next_page_token = results.get("nextPageToken", [])
-
-        if not next_page_token:
-            break
-
-    if max_messages:
-        return ids[:max_messages] # return only up to max_messages if specified
-    
-    return ids
-
-
-ids = list_message_ids(build_client(get_creds()), GMAIL_QUERY, MAX_MESSAGES)
+ids = os.listdir(IDS_PATH)
 
 # print(ids)
 print(f"Found {len(ids)} messages")
-
-# Helper function to strip emails from names
-def strip_email(email_str: str) -> str:
-    if "<" in email_str and ">" in email_str:
-        start = email_str.index("<") + 1
-        end = email_str.index(">")
-        return email_str[start:end]
-    return email_str
 
 # Helper function to clean invisible characters
 # https://www.fileformat.info/info/unicode/category/index.htm
@@ -138,75 +44,89 @@ def clean_invisible_chars(text: str) -> str:
 
     return " ".join(cleaned_body_la_ele.split())
 
-# Helper function to count spammy tokens in body
-def count_spammy_tokens(body: str, spam_tokens: List[str]) -> int:
-    count = 0
-    body_lower = [word.lower() for word in body.split()]
-    spam_tokens_lower = [token.lower() for token in spam_tokens]
-    for token in spam_tokens_lower:
-        count += body_lower.count(token)
-    return count
+# Get email data from files
+def get_file_email_body(path: str) -> str:
+    # Read raw email bytes
+    with open(path, "rb") as f:
+        raw = f.read()
 
-# Get email data
-def get_message_data(service, msg_id: str) -> Dict[str, Any]:
-    message = service.users().messages().get(userId="me", id=msg_id, format="full").execute()
-    payload = message.get("payload", {})
-    headers = payload.get("headers", [])
-    parts = payload.get("parts", [])
-    
-    # Extract relevant headers
-    subject = next((h["value"] for h in headers if h["name"] == "Subject"), "")
-    from_email = next((h["value"] for h in headers if h["name"] == "From"), "")
-    from_email = strip_email(from_email)
-    date = next((h["value"] for h in headers if h["name"] == "Date"), "")
-    
-    # Extract body content
-    body = ""
-    for part in parts:
-        if part.get("mimeType") == "text/html":
-            body_data = part.get("body", {}).get("data", "")
-            body = decode_base64url(body_data).decode("utf-8")
-            break
-        elif part.get("mimeType") == "text/plain":
-            body_data = part.get("body", {}).get("data", "")
-            body = decode_base64url(body_data).decode("utf-8")
-    
-    # Parse HTML to extract URLs and clean up body text
-    urls = []
-    clean_body_la_ele = ""
-    if body:
-        soup = BeautifulSoup(body, "html.parser")
+    if raw.startswith(b"From "):
+        first_nl = raw.find(b"\n")
+        if first_nl != -1:
+            raw = raw[first_nl + 1 :]
 
-        for tag in soup(["script", "style", "head", "meta", "title"]):
-            tag.decompose()  # remove tags
+    # Parse email using stdlib
+    msg = BytesParser(policy=policy.default).parsebytes(raw)
+    # print(msg)
 
-        for a in soup.find_all("a", href=True):
-            urls.append(a["href"])
+    text_plain = None
+    text_html = None
 
-        clean_body_la_ele = soup.get_text(separator=" ", strip=True)
-        clean_body_la_ele = clean_invisible_chars(clean_body_la_ele)
+    if msg.is_multipart():
+        # print("here")
+        for part in msg.walk():
+            content_disposition = (part.get_content_disposition() or "").lower()
+            if content_disposition == "attachment":
+                continue  # skip attachments
 
-    body = clean_body_la_ele
-    urls = len(urls)
+            ctype = part.get_content_type()
 
+            if ctype == "text/html" and text_html is None:
+                payload = part.get_payload(decode=True)
+                if payload is not None:
+                    try:
+                        text_html = payload.decode(part.get_content_charset() or "utf-8", errors="replace")
+                    except LookupError:
+                        text_html = payload.decode("utf-8", errors="replace")
 
-    if 'UNREAD' in message.get('labelIds', []):
-        opened = False
+            elif ctype == "text/plain" and text_plain is None:
+                payload = part.get_payload(decode=True)
+                if payload is not None:
+                    try:
+                        text_plain = payload.decode(part.get_content_charset() or "utf-8", errors="replace")
+                    except LookupError:
+                        text_plain = payload.decode("utf-8", errors="replace")
     else:
-        opened = True
-    
-    return {
-        "id": msg_id,
-        "body": body
-    }
+        # print("here2")
+        ctype = msg.get_content_type()
+        payload = msg.get_payload(decode=True)
+        if payload is not None:
+            if ctype == "text/html":
+                try:
+                    text_html = payload.decode(msg.get_content_charset() or "utf-8", errors="replace")
+                except LookupError:
+                    text_html = payload.decode("utf-8", errors="replace")
+            elif ctype == "text/plain":
+                try:
+                    text_plain = payload.decode(msg.get_content_charset() or "utf-8", errors="replace")
+                except LookupError:
+                    text_plain = payload.decode("utf-8", errors="replace")
 
-def create_dataset(service, ids: List[str], out_file: str):
+    # Clean and normalize body
+    # Prefer HTML over plain text
+    if text_html:
+        soup = BeautifulSoup(text_html, "html.parser")
+        for tag in soup(["script", "style", "head", "meta", "title"]):
+            tag.decompose()
+        body = soup.get_text(separator=" ", strip=True)
+        body = clean_invisible_chars(body)
+        return body
+
+    if text_plain:
+        return clean_invisible_chars(text_plain)
+
+    return ""
+
+def create_dataset(ids_path: str, out_file: str):
     with open(out_file, "w") as f:
-        for i, msg_id in enumerate(ids):
+        i = 1
+        for msg_id in os.listdir(ids_path):
+            file_path = os.path.join(ids_path, msg_id)
             print(f"Processing message {i+1}/{len(ids)}: {msg_id}")
-            msg_data = get_message_data(service, msg_id)
+            msg_data = get_file_email_body(file_path)
             json.dump(msg_data, f, ensure_ascii=False)
             f.write("\n")
             time.sleep(0.1)  # to respect API rate limitation
+            i += 1
 
-create_dataset(build_client(get_creds()), ids, OUT_JSONL)
+create_dataset(IDS_PATH, OUT_JSONL)
