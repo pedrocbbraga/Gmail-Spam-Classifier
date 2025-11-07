@@ -6,6 +6,8 @@ import time
 import tqdm
 import unicodedata
 import re
+import pandas as pd
+import numpy as np
 from typing import List, Dict, Any, Optional
 from pathlib import Path
 from bs4 import BeautifulSoup
@@ -31,7 +33,7 @@ OUT_JSONL = "gmail_dataset.jsonl"
 
 # Input
 GMAIL_QUERY  = 'in:inbox newer_than:1y'
-MAX_MESSAGES = 10
+MAX_MESSAGES = 2500
 
 # Get OAuth credentials - boilerplate from Google
 # https://developers.google.com/workspace/gmail/api/quickstart/python
@@ -138,6 +140,10 @@ def clean_invisible_chars(text: str) -> str:
 
     return " ".join(cleaned_body_la_ele.split())
 
+def open_spamtoken_library(csv_path: str) -> List[str]:
+    data = pd.read_csv(csv_path)
+    return data['token'].tolist()
+
 # Helper function to count spammy tokens in body
 def count_spammy_tokens(body: str, spam_tokens: List[str]) -> int:
     count = 0
@@ -187,7 +193,8 @@ def get_message_data(service, msg_id: str) -> Dict[str, Any]:
         clean_body_la_ele = clean_invisible_chars(clean_body_la_ele)
 
     body = clean_body_la_ele
-    urls = len(urls)
+    spamtoken_count = count_spammy_tokens(body, open_spamtoken_library("spamtoken_library.csv"))
+    url_count = len(urls)
 
 
     if 'UNREAD' in message.get('labelIds', []):
@@ -200,8 +207,8 @@ def get_message_data(service, msg_id: str) -> Dict[str, Any]:
         "subject": subject,
         "from": from_email,
         "date": date,
-        "urls": urls,
-        "body": body,
+        "url count": url_count,
+        "spam token count": spamtoken_count,
         "opened": opened
     }
 
