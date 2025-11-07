@@ -31,7 +31,7 @@ OUT_JSONL = "gmail_dataset.jsonl"
 
 # Input
 GMAIL_QUERY  = 'in:inbox newer_than:1y'
-MAX_MESSAGES = 5000
+MAX_MESSAGES = 10
 
 # Get OAuth credentials - boilerplate from Google
 # https://developers.google.com/workspace/gmail/api/quickstart/python
@@ -137,6 +137,15 @@ def clean_invisible_chars(text: str) -> str:
     cleaned_body_la_ele = re.sub(r"[\u00AD\u200B-\u200F\u202A-\u202E\u2060-\u206F\uFEFF\u034F]+", "", cleaned_body_la_ele)
 
     return " ".join(cleaned_body_la_ele.split())
+
+# Helper function to count spammy tokens in body
+def count_spammy_tokens(body: str, spam_tokens: List[str]) -> int:
+    count = 0
+    body_lower = [word.lower() for word in body.split()]
+    spam_tokens_lower = [token.lower() for token in spam_tokens]
+    for token in spam_tokens_lower:
+        count += body_lower.count(token)
+    return count
 
 # Get email data
 def get_message_data(service, msg_id: str) -> Dict[str, Any]:
