@@ -5,6 +5,7 @@ import pandas as pd
 import numpy as np
 from itertools import combinations
 import matplotlib.pyplot as plt
+from tqdm import tqdm
 
 data = pd.read_json("./gmail_dataset.jsonl", orient="records", lines=True)
 
@@ -12,8 +13,8 @@ Y = data[["id", "from", "date", "url count", "spam token count"]].to_numpy()
 
 senders = Y[:, 1]
 unique_senders = np.unique(senders)
-url_count = Y[:, 3].astype(int)
-spam_token_count = Y[:, 4].astype(int)
+url_counts = Y[:, 3].astype(int)
+spam_token_counts = Y[:, 4].astype(int)
 is_opened = data["opened"].astype(int).to_numpy()
 
 # Collect data and organize emails per unique sender
@@ -23,8 +24,8 @@ is_opened = data["opened"].astype(int).to_numpy()
 sender_email_data = {}
 for sender in unique_senders:
     sender_indices = np.where(senders == sender)[0]
-    sender_url_counts = url_count[sender_indices]
-    sender_spam_token_counts = spam_token_count[sender_indices]
+    sender_url_counts = url_counts[sender_indices]
+    sender_spam_token_counts = spam_token_counts[sender_indices]
     sender_is_opened = is_opened[sender_indices]
     sender_email_data[sender] = {
         "sender": sender,
@@ -33,6 +34,26 @@ for sender in unique_senders:
         "spam_token_counts": sender_spam_token_counts.tolist(),
         "is_opened": sender_is_opened.tolist()
     }
+
+# create spam filter model for each sender
+for sender in tqdm(sender_email_data):
+    print(sender)
+    grp_email_ids = np.array(sender_email_data[sender]["email_ids"])
+    grp_url_counts = np.array(sender_email_data[sender]["url_counts"])
+    grp_spam_token_counts = np.array(sender_email_data[sender]["spam_token_counts"])
+    grp_is_opened = np.array(sender_email_data[sender]["is_opened"])
+    
+    coords = {"grp_email_ids": grp_email_ids}
+
+    with pm.Model(coords=coords) as m:
+        grp_url_counts_data = pm.Data("grp_url_counts_data", grp_url_counts, dims="grp_email_ids")
+        grp_spam_token_counts_data = pm.Data("grp_spam_token_counts_data", grp_spam_token_counts, dims="grp_email_ids")
+        grp_is_opened_data = pm.Data("grp_is_opened_data", grp_is_opened, dims="grp_email_ids")
+
+
+
+
+    # with pm.Model() as model:
 
 # with pm.Model(coords=coords) as model:
 #     url_count_data = pm.Data("url_count_data", url_count, dims="id")
