@@ -37,36 +37,60 @@ for sender in unique_senders:
 
 # create spam filter model for each sender
 for sender in tqdm(sender_email_data):
-    print(sender)
+    print(f"Processing {sender}:")
     grp_email_ids = np.array(sender_email_data[sender]["email_ids"])
     grp_url_counts = np.array(sender_email_data[sender]["url_counts"])
     grp_spam_token_counts = np.array(sender_email_data[sender]["spam_token_counts"])
     grp_is_opened = np.array(sender_email_data[sender]["is_opened"])
+    # print(grp_spam_token_counts)
     
     coords = {"grp_email_ids": grp_email_ids}
 
+    if len(grp_email_ids) < 6:
+        print(f"Skipping {sender}: {len(grp_email_ids)} emails is too few for a mixture model.")
+        continue
+
     with pm.Model(coords=coords) as m:
-        grp_url_counts_data = pm.Data("grp_url_counts_data", grp_url_counts, dims="grp_email_ids")
-        grp_spam_token_counts_data = pm.Data("grp_spam_token_counts_data", grp_spam_token_counts, dims="grp_email_ids")
-        grp_is_opened_data = pm.Data("grp_is_opened_data", grp_is_opened, dims="grp_email_ids")
+        url_data = pm.Data("url_data", grp_url_counts, dims="grp_email_ids")
+        token_data = pm.Data("token_data", grp_spam_token_counts, dims="grp_email_ids")
+        opened_data = pm.Data("opened_data", grp_is_opened, dims="grp_email_ids")
 
+        # Prior on spam
+        p_y = pm.Beta("p_y", alpha=1, beta=1)
 
+        # Prior on spam tokens
+        lambda_t = pm.Gamma("lambda_t",
+                            alpha=2,
+                            beta=1,
+                            shape=2,
+                            transform=pm.distributions.transforms.ordered,
+                            initval=[0.5,15.0]
+                            )
 
+        lambda_u = pm.Gamma("lambda_u", alpha=2, beta=1, shape=2)
 
-    # with pm.Model() as model:
+        p_o = pm.Beta("p_o", alpha=1, beta=1, shape=2)
 
-# with pm.Model(coords=coords) as model:
-#     url_count_data = pm.Data("url_count_data", url_count, dims="id")
+        y_i = pm.Bernoulli("y_i", p=p_y, dims="grp_email_ids")
 
+        t_i = pm.Poisson("t_i", mu=lambda_t[y_i], observed=token_data)
+        u_i = pm.Poisson("u_i", mu=lambda_u[y_i], observed=url_data)
+        o_i = pm.Bernoulli("o_i", p=p_o[y_i], observed=opened_data)
 
-#     t = pm.NegativeBinomial("t", mu=5, alpha=1, observed=spam_token_count[0]) # token count likelihood
+        trace = pm.sample(2000, tune=1500, target_accept=0.95)
 
-#     u = pm.NegativeBinomial("u", mu=2, alpha=1, observed=url_count[0]) # url count likelihood
-
-#     p_o = pm.Beta("p_o", alpha=2, beta=2, observed=is_opened[0]) # opened prior
-#     o = pm.Bernoulli("o", p=p_o) # opened likelihood
-
-#     p_y = pm.Beta("p_y", alpha=2, beta=2) # prior prior
-#     y = pm.Bernoulli("y", p=p_y, dims="id") # prior
-
-#     trace = pm.sample(1000, tune=1000, target_accept=0.9, return_inferencedata=True)
+    email_spam_probs = trace.posterior["y_i"].mean(dim=["chain", "draw"]).to_numpy()
+    
+    print("Results for " + sender + ":")
+    print("\nSpam Probabilities for each email:")
+    for email_id, prob in zip(grp_email_ids, email_spam_probs):
+        if prob > 0.8:
+            print(f"  [SPAMMMM]   Email {email_id}: {prob:.2f}")
+        else:
+            print(f"  [HAM]    Email {email_id}: {prob:.2f}")
+    
+    print(az.summary(trace))
+    print("Actual data entry values:")
+    print("grp_spam_token_counts", grp_spam_token_counts)
+    print("grp_url_counts", grp_url_counts)
+    print("grp_is_opened", grp_is_opened)
