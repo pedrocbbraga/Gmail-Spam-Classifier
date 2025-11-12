@@ -11,7 +11,7 @@ from google.auth.transport.requests import Request
 # Load config
 SCOPES = ["https://www.googleapis.com/auth/gmail.modify"]
 CLIENT_SECRET = "client_secret.json"
-TOKEN_FILE = "token.json"
+TOKEN_FILE = "token_modify.json"
 LABEL_NAME = "TestSpam"
 
 emails_to_move = pd.read_csv("./emails_to_move.csv").to_numpy()
