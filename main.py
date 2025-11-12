@@ -36,6 +36,7 @@ for sender in unique_senders:
     }
 
 # create spam filter model for each sender
+move_emails_to_spam = []
 for sender in tqdm(sender_email_data):
     print(f"Processing {sender}:")
     grp_email_ids = np.array(sender_email_data[sender]["email_ids"])
@@ -86,11 +87,15 @@ for sender in tqdm(sender_email_data):
     for email_id, prob in zip(grp_email_ids, email_spam_probs):
         if prob > 0.8:
             print(f"  [SPAMMMM]   Email {email_id}: {prob:.2f}")
+            move_emails_to_spam.append(email_id)
         else:
             print(f"  [HAM]    Email {email_id}: {prob:.2f}")
+            move_emails_to_spam.append(email_id)
     
     print(az.summary(trace))
     print("Actual data entry values:")
     print("grp_spam_token_counts", grp_spam_token_counts)
     print("grp_url_counts", grp_url_counts)
     print("grp_is_opened", grp_is_opened)
+
+print(len(move_emails_to_spam))
