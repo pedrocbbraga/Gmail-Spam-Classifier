@@ -16,7 +16,7 @@ Output: list of email ids to send to spam
 
 OUT_FILE = "emails_to_move.csv"
 
-data = pd.read_json("./gmail_dataset_5000.jsonl", orient="records", lines=True)
+data = pd.read_json("./gmail_dataset_6000.jsonl", orient="records", lines=True)
 
 Y = data[["id", "from", "date", "url count", "spam token count"]].to_numpy()
 

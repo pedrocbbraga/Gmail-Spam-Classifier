@@ -2,6 +2,7 @@ import os
 import sys
 import os
 import json
+from tqdm import tqdm
 import pandas as pd
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
@@ -64,6 +65,6 @@ def move_to_label(client, id: str, label_id: str):
 
     return client.users().messages().modify(userId="me", id=id, body=body).execute()
 
-for id in emails_to_move:
+for id in tqdm(emails_to_move):
     print(id[0])
     move_to_label(client, id[0], label_id)
