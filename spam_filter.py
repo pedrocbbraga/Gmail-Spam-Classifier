@@ -57,7 +57,7 @@ for sender in tqdm(sender_email_data):
     coords = {"grp_email_ids": grp_email_ids}
 
     if len(grp_email_ids) < 6:
-        print(f"Skipping {sender}: {len(grp_email_ids)} emails is too few for a mixture model.")
+        print(f"Skipping {sender}: not enough emails for mixture model.")
         continue
 
     with pm.Model(coords=coords) as m:
@@ -99,7 +99,6 @@ for sender in tqdm(sender_email_data):
             move_emails_to_spam.append(email_id)
         else:
             print(f"  [HAM]    Email {email_id}: {prob:.2f}")
-            move_emails_to_spam.append(email_id)
     
     # print(az.summary(trace))
     # print("Actual data entry values:")

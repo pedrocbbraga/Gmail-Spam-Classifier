@@ -45,11 +45,7 @@ client = build_client(get_creds())
 
 def get_label(client, label_name: str) -> str:
     labels = client.users().labels().list(userId="me").execute()
-    # labels_data = pd.json_normalize(labels).to_numpy()
-    # print(labels_data.shape)
-    # print(labels_data.head())
-    # formatted_labels = json.dumps(labels, indent=2)
-    # print(formatted_labels)
+
     for label in labels["labels"]:
         if label.get("name") == label_name:
             label_id = label.get("id")
@@ -57,14 +53,26 @@ def get_label(client, label_name: str) -> str:
     
     return label_id
 
-# print(get_label(client, LABEL_NAME))
+print(get_label(client, LABEL_NAME))
 label_id = get_label(client, LABEL_NAME)
+
+inbox_id = get_label(client, "INBOX")
 
 def move_to_label(client, id: str, label_id: str):
     body = {"addLabelIds": label_id}
 
     return client.users().messages().modify(userId="me", id=id, body=body).execute()
 
-for id in tqdm(emails_to_move):
-    print(id[0])
-    move_to_label(client, id[0], label_id)
+# Essentially, remove inbox label
+def archive(client, id: str, inbox_id: str):
+    body = {"removeLabelIds": inbox_id}
+
+    return client.users().messages().modify(userId="me", id=id, body=body).execute()
+
+if __name__ == "__main__":
+    for id in tqdm(emails_to_move[2000:]):
+        print(id[0])
+        # move_to_label(client, id[0], label_id)
+        # archive(client, id[0], inbox_id)
+        move_to_label(client, id[0], inbox_id)
+        archive(client, id[0], label_id)
