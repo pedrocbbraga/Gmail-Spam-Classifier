@@ -74,5 +74,5 @@ if __name__ == "__main__":
         print(id[0])
         # move_to_label(client, id[0], label_id)
         # archive(client, id[0], inbox_id)
-        move_to_label(client, id[0], inbox_id)
-        archive(client, id[0], label_id)
+        move_to_label(client, id[0], label_id)
+        archive(client, id[0], inbox_id)
