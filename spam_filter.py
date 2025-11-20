@@ -2,6 +2,7 @@ import arviz as az
 import pymc as pm
 import pandas as pd
 import numpy as np
+import os
 from itertools import combinations
 import matplotlib.pyplot as plt
 from tqdm import tqdm
@@ -14,7 +15,7 @@ Output: list of email ids to send to spam
 
 """
 
-OUT_FILE = "emails_to_move.csv"
+OUT_FILE = "emails_to_move_500.csv"
 
 data = pd.read_json("./gmail_dataset_500.jsonl", orient="records", lines=True)
 
@@ -27,26 +28,10 @@ url_counts = Y[:, 3].astype(int)
 spam_token_counts = Y[:, 4].astype(int)
 is_opened = data["opened"].astype(int).to_numpy()
 
-# Collect data and organize emails per unique sender
-# Need a list:
-# - sender email
-# list of email ids with respective url counts, spam token counts, opened status
-# sender_email_data = {}
-# for sender in unique_senders:
-#     sender_indices = np.where(senders == sender)[0]
-#     sender_url_counts = url_counts[sender_indices]
-#     sender_spam_token_counts = spam_token_counts[sender_indices]
-#     sender_is_opened = is_opened[sender_indices]
-#     sender_email_data[sender] = {
-#         "sender": sender,
-#         "email_ids": Y[sender_indices, 0].tolist(),
-#         "url_counts": sender_url_counts.tolist(),
-#         "spam_token_counts": sender_spam_token_counts.tolist(),
-#         "is_opened": sender_is_opened.tolist()
-#     }
-
 log_url = np.log1p(url_counts)
 log_tokens = np.log1p(spam_token_counts)
+log_url_std = (log_url - log_url.mean()) / log_url.std()
+log_tokens_std = (log_tokens - log_tokens.mean()) / log_tokens.std()
 
 n_email = len(email_ids)
 n_sender = len(unique_senders)
@@ -57,13 +42,15 @@ move_emails_to_spam = []
 with pm.Model(coords=coords) as m_sigmoid:
     sender_idx_data = pm.Data("sender_idx", sender_idx, dims="email")
 
-    log_url_data = pm.Data("log_url_data", log_url, dims="email")
-    log_token_data = pm.Data("log_token_data", log_tokens, dims="email")
+    log_url_data = pm.Data("log_url_data", log_url_std, dims="email")
+    log_token_data = pm.Data("log_token_data", log_tokens_std, dims="email")
     opened_data = pm.Data("opened_data", is_opened, dims="email")
 
-    mu_alpha = pm.Normal("mu_alpha", mu=0, sigma=5)
-    sigma_alpha = pm.HalfCauchy("sigma_alpha", beta=5)
-    alpha_s = pm.Normal("alpha_sender", mu=mu_alpha, sigma=sigma_alpha, dims="sender")
+    mu_alpha = pm.Normal("mu_alpha", mu=0, sigma=2)
+    sigma_alpha = pm.HalfNormal("sigma_alpha", sigma=2)
+    alpha_s = pm.Normal("alpha_s", mu=mu_alpha, sigma=sigma_alpha, dims="sender")
+    # alpha_offset = pm.Normal("alpha_offset", mu=0, sigma=1, dims="sender")
+    # alpha_s = pm.Deterministic("alpha_s", mu_alpha + sigma_alpha * alpha_offset, dims="sender")
 
     # Prior on spam
     p_y = pm.Deterministic("spam_sender", pm.math.sigmoid(alpha_s), dims="sender") 
@@ -73,15 +60,19 @@ with pm.Model(coords=coords) as m_sigmoid:
     # Token likelihood priors
     mu_t = pm.Normal("mu_tokens",
                             mu=0,
-                            sigma=5,
-                            # transform=pm.distributions.transforms.ordered,
+                            sigma=2,
+                            transform=pm.distributions.transforms.ordered,
                             dims="class"
                             )
-    sigma_t = pm.HalfCauchy("sigma_t", beta=5, dims="class")
+    # sigma_t = pm.HalfNormal("sigma_t", sigma=2, dims="class")
+    sigma_t_raw = pm.HalfNormal("sigma_t_raw", sigma=1, dims="class")
+    sigma_u_raw = pm.HalfNormal("sigma_u_raw", sigma=1, dims="class")
 
     # URL likelihood priors
-    mu_u = pm.Normal("mu_url", mu=0, sigma=5, dims="class")
-    sigma_u = pm.HalfCauchy("sigma_u", beta=5, dims="class")
+    mu_u = pm.Normal("mu_url", mu=0, sigma=2, dims="class")
+    # sigma_u = pm.HalfNormal("sigma_u", sigma=2, dims="class")
+    sigma_t = pm.Deterministic("sigma_t", 0.01 + sigma_t_raw, dims="class")
+    sigma_u = pm.Deterministic("sigma_u", 0.01 + sigma_u_raw, dims="class")
 
     # Opened likelihood prior
     p_o = pm.Beta("p_o", alpha=1, beta=1, dims="class")
@@ -90,10 +81,13 @@ with pm.Model(coords=coords) as m_sigmoid:
     u = pm.Normal("u", mu=mu_u[y], sigma=sigma_u[y], observed=log_url_data, dims="email")
     o = pm.Bernoulli("o", p=p_o[y], observed=opened_data, dims="email")
 
-    trace_sigmoid = pm.sample(draws=1500,
+    trace_sigmoid = pm.sample(draws=1000,
                         tune=1500,
-                        target_accept=0.95,
-                        return_inferencedata=True
+                        target_accept=0.99,
+                        init="jitter+adapt_diag",
+                        nuts={"max_treedepth": 15},
+                        return_inferencedata=True,
+                        initvals={"mu_tokens": np.array([-1.0, 1.0])}
                         )
 
     pm.compute_log_likelihood(trace_sigmoid)
@@ -102,8 +96,8 @@ with pm.Model(coords=coords) as m_sigmoid:
 with pm.Model(coords=coords) as m_beta:
     sender_idx_data = pm.Data("sender_idx", sender_idx, dims="email")
 
-    log_url_data = pm.Data("log_url_data", log_url, dims="email")
-    log_token_data = pm.Data("log_token_data", log_tokens, dims="email")
+    log_url_data = pm.Data("log_url_data", log_url_std, dims="email")
+    log_token_data = pm.Data("log_token_data", log_tokens_std, dims="email")
     opened_data = pm.Data("opened_data", is_opened, dims="email")
 
     # Prior on spam
@@ -114,15 +108,18 @@ with pm.Model(coords=coords) as m_beta:
     # Token likelihood priors
     mu_t = pm.Normal("mu_tokens",
                             mu=0,
-                            sigma=5,
-                            # transform=pm.distributions.transforms.ordered,
+                            sigma=2,
+                            transform=pm.distributions.transforms.ordered,
                             dims="class"
                             )
-    sigma_t = pm.HalfCauchy("sigma_t", beta=5, dims="class")
+    sigma_t_raw = pm.HalfNormal("sigma_t_raw", sigma=1, dims="class")
+    sigma_u_raw = pm.HalfNormal("sigma_u_raw", sigma=1, dims="class")
 
     # URL likelihood priors
-    mu_u = pm.Normal("mu_url", mu=0, sigma=5, dims="class")
-    sigma_u = pm.HalfCauchy("sigma_u", beta=5, dims="class")
+    mu_u = pm.Normal("mu_url", mu=0, sigma=2, dims="class")
+    # sigma_u = pm.HalfNormal("sigma_u", sigma=2, dims="class")
+    sigma_t = pm.Deterministic("sigma_t", 0.01 + sigma_t_raw, dims="class")
+    sigma_u = pm.Deterministic("sigma_u", 0.01 + sigma_u_raw, dims="class")
 
     # Opened likelihood prior
     p_o = pm.Beta("p_o", alpha=1, beta=1, dims="class")
@@ -131,45 +128,89 @@ with pm.Model(coords=coords) as m_beta:
     u = pm.Normal("u", mu=mu_u[y], sigma=sigma_u[y], observed=log_url_data, dims="email")
     o = pm.Bernoulli("o", p=p_o[y], observed=opened_data, dims="email")
 
-    trace_beta = pm.sample(draws=1500,
+    trace_beta = pm.sample(draws=1000,
                         tune=1500,
-                        target_accept=0.95,
-                        return_inferencedata=True
+                        target_accept=0.99,
+                        init="jitter+adapt_diag",
+                        nuts={"max_treedepth": 15},
+                        return_inferencedata=True,
+                        initvals={"mu_tokens": np.array([-1.0, 1.0])}
                         )
 
     pm.compute_log_likelihood(trace_beta)
     pm.sample_posterior_predictive(trace_beta, extend_inferencedata=True)
 
 
+
+
+""" ---------- HIERARCHICAL MODEL DAGs ---------- """
+# Sigmoid model DAG
+g_sigmoid = pm.model_to_graphviz(m_sigmoid)
+g_sigmoid.render("sigmoid_model", format="png")
+g_sigmoid.view()
+
+# Beta model DAG
+g_beta = pm.model_to_graphviz(m_beta)
+g_beta.render("beta_model", format="png")
+g_beta.view()
+
+
+
+
+""" ---------- ARVIZ SUMMARIES ---------- """
+# Sigmoid model summary
+print(f"SUMMARY sigmoid model:")
+print(az.summary(trace_sigmoid))
+
+# Beta model summary
+print(f"SUMMARY beta model:")
+print(az.summary(trace_beta))
+
+
+
+
+""" ---------- LOO RESULTS ---------- """
+# Sigmoid model LOO
 log_like_sum_1 = trace_sigmoid.log_likelihood["t"] + trace_sigmoid.log_likelihood["u"] + trace_sigmoid.log_likelihood["o"]
 trace_sigmoid.log_likelihood["obs"] = log_like_sum_1
 loo_results_sigmoid = az.loo(trace_sigmoid, var_name="obs")
+print("LOO sigmoid model:")
+print(loo_results_sigmoid)
 
+# Beta model LOO
 log_like_sum_2 = trace_beta.log_likelihood["t"] + trace_beta.log_likelihood["u"] + trace_beta.log_likelihood["o"]
 trace_beta.log_likelihood["obs"] = log_like_sum_2
 loo_results_beta = az.loo(trace_beta, var_name="obs")
+print("LOO beta model:")
+print(loo_results_beta)
 
-print(f"loo model sigmoid: {loo_results_sigmoid}")
-print(f"loo model beta: {loo_results_beta}")
-
-compare_dict = {
-    "Sigmoid": loo_results_sigmoid,
-    "Beta": loo_results_beta
-}
-
+# LOO comparison
+compare_dict = {"Sigmoid": loo_results_sigmoid, "Beta": loo_results_beta}
 loo_compare = az.compare(compare_dict)
-
 print("\nModel Comparison:")
 print(loo_compare)
 
-# az.plot_ppc(trace_sigmoid, var_names=["t", "u", "o"])
-# plt.title("Sigmoid Model Trace")
-# plt.show()
 
-# az.plot_ppc(trace_sigmoid, var_names=["t", "u", "o"])
-# plt.title("Beta Model Trace")
-# plt.show()
 
+
+""" ---------- ARVIZ PLOTS ---------- """
+output_folder = "/Users/pedro/Documents/Georgia Tech OMSCS/ISYE 6420 Bayesian Statistics/Project/Gmail-Spam-Classifier/Results"
+
+# Sigmoid model PPC
+az.plot_ppc(trace_sigmoid, var_names=["t", "u", "o"])
+plt.savefig(os.path.join(output_folder, "Sigmoid Model PPC.png"))
+plt.close()
+
+# Beta model PPC
+az.plot_ppc(trace_beta, var_names=["t", "u", "o"])
+plt.savefig(os.path.join(output_folder, "Beta Model PPC.png"))
+plt.close()
+
+
+
+
+""" ---------- OUTPUT SPAM EMAILS ---------- """
+# Pick better model
 if loo_results_sigmoid.elpd_loo > loo_results_beta.elpd_loo:
     trace = trace_sigmoid
 else:

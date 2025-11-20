@@ -1,0 +1,74 @@
+digraph {
+	subgraph "clusteremail (500)" {
+		log_token_data [label="log_token_data
+~
+Data" shape=box style="rounded, filled"]
+		opened_data [label="opened_data
+~
+Data" shape=box style="rounded, filled"]
+		sender_idx [label="sender_idx
+~
+Data" shape=box style="rounded, filled"]
+		o [label="o
+~
+Bernoulli" shape=ellipse style=filled]
+		u [label="u
+~
+Normal" shape=ellipse style=filled]
+		y [label="y
+~
+Bernoulli" shape=ellipse]
+		t [label="t
+~
+Normal" shape=ellipse style=filled]
+		log_url_data [label="log_url_data
+~
+Data" shape=box style="rounded, filled"]
+		label="email (500)" labeljust=r labelloc=b style=rounded
+	}
+	subgraph "clustersender (146)" {
+		spam_sender [label="spam_sender
+~
+Beta" shape=ellipse]
+		label="sender (146)" labeljust=r labelloc=b style=rounded
+	}
+	subgraph "clusterclass (2)" {
+		sigma_u_raw [label="sigma_u_raw
+~
+Halfnormal" shape=ellipse]
+		p_o [label="p_o
+~
+Beta" shape=ellipse]
+		sigma_u [label="sigma_u
+~
+Deterministic" shape=box]
+		sigma_t_raw [label="sigma_t_raw
+~
+Halfnormal" shape=ellipse]
+		mu_url [label="mu_url
+~
+Normal" shape=ellipse]
+		sigma_t [label="sigma_t
+~
+Deterministic" shape=box]
+		mu_tokens [label="mu_tokens
+~
+Normal" shape=ellipse]
+		label="class (2)" labeljust=r labelloc=b style=rounded
+	}
+	u -> log_url_data
+	t -> log_token_data
+	o -> opened_data
+	spam_sender -> y
+	sender_idx -> y
+	sigma_t_raw -> sigma_t
+	sigma_u_raw -> sigma_u
+	y -> t
+	sigma_t -> t
+	mu_tokens -> t
+	y -> u
+	sigma_u -> u
+	mu_url -> u
+	y -> o
+	p_o -> o
+}

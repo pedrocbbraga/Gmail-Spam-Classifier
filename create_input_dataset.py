@@ -29,11 +29,11 @@ from google.auth.transport.requests import Request
 SCOPES = ["https://www.googleapis.com/auth/gmail.readonly"]
 CLIENT_SECRET = "client_secret.json"
 TOKEN_FILE = "token_read.json"
-OUT_JSONL = "gmail_dataset_6000.jsonl"
+OUT_JSONL = "gmail_dataset_50.jsonl"
 
 # Input
 GMAIL_QUERY  = 'in:inbox newer_than:1y'
-MAX_MESSAGES = 6000
+MAX_MESSAGES = 50
 
 # Get OAuth credentials - boilerplate from Google
 # https://developers.google.com/workspace/gmail/api/quickstart/python
