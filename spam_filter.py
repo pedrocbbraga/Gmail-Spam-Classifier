@@ -3,24 +3,29 @@ import pymc as pm
 import pandas as pd
 import numpy as np
 import os
-from itertools import combinations
+import argparse
 import matplotlib.pyplot as plt
-from tqdm import tqdm
 
 """
+
 Inputs: clean email data, spam token library
 Purpose: runs naive bayes mixture model to determine spam emails
 Output: list of email ids to send to spam
 
-
 """
 
-OUT_FILE = "emails_to_move_500.csv"
+parser = argparse.ArgumentParser()
+parser.add_argument("--N", type=int, default=500)
+args = parser.parse_args()
 
-data = pd.read_json("./gmail_dataset_500.jsonl", orient="records", lines=True)
+N = args.N
+OUT_FILE = (f"emails_to_move_{N}.csv")
 
+# Read data
+data = pd.read_json(f"./gmail_dataset_{N}.jsonl", orient="records", lines=True)
 Y = data[["id", "from", "date", "url count", "spam token count"]].to_numpy()
 
+# Extract variables
 email_ids = Y[:, 0]
 senders = Y[:, 1]
 unique_senders, sender_idx = np.unique(senders, return_inverse=True)
@@ -28,8 +33,10 @@ url_counts = Y[:, 3].astype(int)
 spam_token_counts = Y[:, 4].astype(int)
 is_opened = data["opened"].astype(int).to_numpy()
 
+# Convert to logs
 log_url = np.log1p(url_counts)
 log_tokens = np.log1p(spam_token_counts)
+# Standardize
 log_url_std = (log_url - log_url.mean()) / log_url.std()
 log_tokens_std = (log_tokens - log_tokens.mean()) / log_tokens.std()
 
@@ -38,7 +45,6 @@ n_sender = len(unique_senders)
 
 coords = {"email": np.arange(n_email), "sender": np.arange(n_sender), "class": ["ham", "spam"] }
 
-move_emails_to_spam = []
 with pm.Model(coords=coords) as m_sigmoid:
     sender_idx_data = pm.Data("sender_idx", sender_idx, dims="email")
 
@@ -49,8 +55,6 @@ with pm.Model(coords=coords) as m_sigmoid:
     mu_alpha = pm.Normal("mu_alpha", mu=0, sigma=2)
     sigma_alpha = pm.HalfNormal("sigma_alpha", sigma=2)
     alpha_s = pm.Normal("alpha_s", mu=mu_alpha, sigma=sigma_alpha, dims="sender")
-    # alpha_offset = pm.Normal("alpha_offset", mu=0, sigma=1, dims="sender")
-    # alpha_s = pm.Deterministic("alpha_s", mu_alpha + sigma_alpha * alpha_offset, dims="sender")
 
     # Prior on spam
     p_y = pm.Deterministic("spam_sender", pm.math.sigmoid(alpha_s), dims="sender") 
@@ -58,20 +62,18 @@ with pm.Model(coords=coords) as m_sigmoid:
     y = pm.Bernoulli("y", p=p_y[sender_idx_data], dims="email")
 
     # Token likelihood priors
-    mu_t = pm.Normal("mu_tokens",
+    mu_t = pm.Normal("mu_t",
                             mu=0,
                             sigma=2,
                             transform=pm.distributions.transforms.ordered,
                             dims="class"
                             )
-    # sigma_t = pm.HalfNormal("sigma_t", sigma=2, dims="class")
     sigma_t_raw = pm.HalfNormal("sigma_t_raw", sigma=1, dims="class")
-    sigma_u_raw = pm.HalfNormal("sigma_u_raw", sigma=1, dims="class")
+    sigma_t = pm.Deterministic("sigma_t", 0.01 + sigma_t_raw, dims="class")
 
     # URL likelihood priors
-    mu_u = pm.Normal("mu_url", mu=0, sigma=2, dims="class")
-    # sigma_u = pm.HalfNormal("sigma_u", sigma=2, dims="class")
-    sigma_t = pm.Deterministic("sigma_t", 0.01 + sigma_t_raw, dims="class")
+    mu_u = pm.Normal("mu_u", mu=0, sigma=2, dims="class")
+    sigma_u_raw = pm.HalfNormal("sigma_u_raw", sigma=1, dims="class")
     sigma_u = pm.Deterministic("sigma_u", 0.01 + sigma_u_raw, dims="class")
 
     # Opened likelihood prior
@@ -87,7 +89,7 @@ with pm.Model(coords=coords) as m_sigmoid:
                         init="jitter+adapt_diag",
                         nuts={"max_treedepth": 15},
                         return_inferencedata=True,
-                        initvals={"mu_tokens": np.array([-1.0, 1.0])}
+                        initvals={"mu_t": np.array([-1.0, 1.0])}
                         )
 
     pm.compute_log_likelihood(trace_sigmoid)
@@ -106,19 +108,18 @@ with pm.Model(coords=coords) as m_beta:
     y = pm.Bernoulli("y", p=p_y[sender_idx_data], dims="email")
 
     # Token likelihood priors
-    mu_t = pm.Normal("mu_tokens",
+    mu_t = pm.Normal("mu_t",
                             mu=0,
                             sigma=2,
                             transform=pm.distributions.transforms.ordered,
                             dims="class"
                             )
     sigma_t_raw = pm.HalfNormal("sigma_t_raw", sigma=1, dims="class")
-    sigma_u_raw = pm.HalfNormal("sigma_u_raw", sigma=1, dims="class")
+    sigma_t = pm.Deterministic("sigma_t", 0.01 + sigma_t_raw, dims="class")
 
     # URL likelihood priors
-    mu_u = pm.Normal("mu_url", mu=0, sigma=2, dims="class")
-    # sigma_u = pm.HalfNormal("sigma_u", sigma=2, dims="class")
-    sigma_t = pm.Deterministic("sigma_t", 0.01 + sigma_t_raw, dims="class")
+    mu_u = pm.Normal("mu_u", mu=0, sigma=2, dims="class")
+    sigma_u_raw = pm.HalfNormal("sigma_u_raw", sigma=1, dims="class")
     sigma_u = pm.Deterministic("sigma_u", 0.01 + sigma_u_raw, dims="class")
 
     # Opened likelihood prior
@@ -134,7 +135,7 @@ with pm.Model(coords=coords) as m_beta:
                         init="jitter+adapt_diag",
                         nuts={"max_treedepth": 15},
                         return_inferencedata=True,
-                        initvals={"mu_tokens": np.array([-1.0, 1.0])}
+                        initvals={"mu_t": np.array([-1.0, 1.0])}
                         )
 
     pm.compute_log_likelihood(trace_beta)
@@ -144,15 +145,17 @@ with pm.Model(coords=coords) as m_beta:
 
 
 """ ---------- HIERARCHICAL MODEL DAGs ---------- """
+output_folder_dags = "/Users/pedro/Documents/Georgia Tech OMSCS/ISYE 6420 Bayesian Statistics/Project/Gmail-Spam-Classifier/Results/DAGs"
+
 # Sigmoid model DAG
 g_sigmoid = pm.model_to_graphviz(m_sigmoid)
-g_sigmoid.render("sigmoid_model", format="png")
-g_sigmoid.view()
+g_sigmoid.render(filename=os.path.join(output_folder_dags, f"sigmoid_model_{N}"), format="png", cleanup=True)
+# g_sigmoid.view()
 
 # Beta model DAG
 g_beta = pm.model_to_graphviz(m_beta)
-g_beta.render("beta_model", format="png")
-g_beta.view()
+g_beta.render(filename=os.path.join(output_folder_dags, f"beta_model_{N}"), format="png", cleanup=True)
+# g_beta.view()
 
 
 
@@ -160,11 +163,25 @@ g_beta.view()
 """ ---------- ARVIZ SUMMARIES ---------- """
 # Sigmoid model summary
 print(f"SUMMARY sigmoid model:")
-print(az.summary(trace_sigmoid))
+print(az.summary(trace_sigmoid, var_names=[
+                                            "mu_alpha",
+                                            "sigma_alpha",
+                                            "mu_t",
+                                            "sigma_t_raw",
+                                            "mu_u",
+                                            "sigma_u_raw",
+                                            "p_o"
+                                            ]))
 
 # Beta model summary
 print(f"SUMMARY beta model:")
-print(az.summary(trace_beta))
+print(az.summary(trace_beta, var_names=[
+                                        "mu_t",
+                                        "sigma_t_raw",
+                                        "mu_u",
+                                        "sigma_u_raw",
+                                        "p_o"
+                                        ]))
 
 
 
@@ -194,16 +211,28 @@ print(loo_compare)
 
 
 """ ---------- ARVIZ PLOTS ---------- """
-output_folder = "/Users/pedro/Documents/Georgia Tech OMSCS/ISYE 6420 Bayesian Statistics/Project/Gmail-Spam-Classifier/Results"
+output_folder_plots = "/Users/pedro/Documents/Georgia Tech OMSCS/ISYE 6420 Bayesian Statistics/Project/Gmail-Spam-Classifier/Results/Plots"
+
+# Sigmoid model posteriors
+az.plot_posterior(trace_sigmoid, var_names=["mu_alpha", "sigma_alpha", "mu_t", "mu_u", "p_o"], hdi_prob=0.95)
+plt.tight_layout()
+plt.savefig(os.path.join(output_folder_plots, f"sigmoid_model_posteriors_{N}.png"))
+plt.close()
 
 # Sigmoid model PPC
 az.plot_ppc(trace_sigmoid, var_names=["t", "u", "o"])
-plt.savefig(os.path.join(output_folder, "Sigmoid Model PPC.png"))
+plt.savefig(os.path.join(output_folder_plots, f"sigmoid_model_ppc{N}.png"))
+plt.close()
+
+# Beta model posteriors
+az.plot_posterior(trace_beta, var_names=["mu_t", "mu_u", "p_o"], hdi_prob=0.95)
+plt.tight_layout()
+plt.savefig(os.path.join(output_folder_plots, f"beta_model_posteriors_{N}.png"))
 plt.close()
 
 # Beta model PPC
 az.plot_ppc(trace_beta, var_names=["t", "u", "o"])
-plt.savefig(os.path.join(output_folder, "Beta Model PPC.png"))
+plt.savefig(os.path.join(output_folder_plots, f"beta_model_ppc{N}.png"))
 plt.close()
 
 
@@ -218,13 +247,14 @@ else:
 
 spam_probs = trace.posterior["y"].mean(dim=["chain", "draw"]).to_numpy()
 
-print("\nSpam Probabilities for each email:")
+print("\nProcessing spam probabilities for each email:")
+move_emails_to_spam = []
 for email_id, prob in zip(email_ids, spam_probs):
-    if prob > 0.8:
-        print(f"  [SPAMMMM]   Email {email_id}: {prob:.2f}")
+    if prob > 0.9:
+        # print(f"  [SPAMMMM]   Email {email_id}: {prob:.2f}")
         move_emails_to_spam.append(email_id)
-    else:
-        print(f"  [HAM]    Email {email_id}: {prob:.2f}")
+    # else:
+    #     print(f"  [HAM]    Email {email_id}: {prob:.2f}")
 
 with open(OUT_FILE, "w") as f:
     f.write("ids\n")
