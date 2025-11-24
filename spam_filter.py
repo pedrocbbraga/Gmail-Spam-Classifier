@@ -172,6 +172,9 @@ print(az.summary(trace_sigmoid, var_names=[
                                             "sigma_u_raw",
                                             "p_o"
                                             ]))
+print(az.summary(trace_sigmoid, var_names=[
+                                            "y"
+                                            ]))
 
 # Beta model summary
 print(f"SUMMARY beta model:")
@@ -181,6 +184,9 @@ print(az.summary(trace_beta, var_names=[
                                         "mu_u",
                                         "sigma_u_raw",
                                         "p_o"
+                                        ]))
+print(az.summary(trace_beta, var_names=[
+                                        "y"
                                         ]))
 
 
