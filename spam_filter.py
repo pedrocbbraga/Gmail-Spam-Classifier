@@ -36,12 +36,19 @@ is_opened = data["opened"].astype(int).to_numpy()
 # Convert to logs
 log_url = np.log1p(url_counts)
 log_tokens = np.log1p(spam_token_counts)
+
 # Standardize
 log_url_std = (log_url - log_url.mean()) / log_url.std()
 log_tokens_std = (log_tokens - log_tokens.mean()) / log_tokens.std()
 
 n_email = len(email_ids)
 n_sender = len(unique_senders)
+
+counts = np.bincount(sender_idx)
+# print(counts)
+low_sender_mask = counts < 5
+low_senders = np.where(low_sender_mask)[0]
+# print(low_senders)
 
 coords = {"email": np.arange(n_email), "sender": np.arange(n_sender), "class": ["ham", "spam"] }
 
@@ -83,8 +90,9 @@ with pm.Model(coords=coords) as m_sigmoid:
     u = pm.Normal("u", mu=mu_u[y], sigma=sigma_u[y], observed=log_url_data, dims="email")
     o = pm.Bernoulli("o", p=p_o[y], observed=opened_data, dims="email")
 
-    trace_sigmoid = pm.sample(draws=1000,
+    trace_sigmoid = pm.sample(draws=2000,
                         tune=1500,
+                        chains=4,
                         target_accept=0.99,
                         init="jitter+adapt_diag",
                         nuts={"max_treedepth": 15},
@@ -93,7 +101,7 @@ with pm.Model(coords=coords) as m_sigmoid:
                         )
 
     pm.compute_log_likelihood(trace_sigmoid)
-    pm.sample_posterior_predictive(trace_sigmoid, extend_inferencedata=True)
+    pm.sample_posterior_predictive(trace_sigmoid, var_names=["y", "t", "u", "o"], extend_inferencedata=True)
 
 with pm.Model(coords=coords) as m_beta:
     sender_idx_data = pm.Data("sender_idx", sender_idx, dims="email")
@@ -129,8 +137,9 @@ with pm.Model(coords=coords) as m_beta:
     u = pm.Normal("u", mu=mu_u[y], sigma=sigma_u[y], observed=log_url_data, dims="email")
     o = pm.Bernoulli("o", p=p_o[y], observed=opened_data, dims="email")
 
-    trace_beta = pm.sample(draws=1000,
+    trace_beta = pm.sample(draws=2000,
                         tune=1500,
+                        chains=4,
                         target_accept=0.99,
                         init="jitter+adapt_diag",
                         nuts={"max_treedepth": 15},
@@ -139,7 +148,7 @@ with pm.Model(coords=coords) as m_beta:
                         )
 
     pm.compute_log_likelihood(trace_beta)
-    pm.sample_posterior_predictive(trace_beta, extend_inferencedata=True)
+    pm.sample_posterior_predictive(trace_beta, var_names=["y", "t", "u", "o"], extend_inferencedata=True)
 
 
 
@@ -161,6 +170,9 @@ g_beta.render(filename=os.path.join(output_folder_dags, f"beta_model_{N}"), form
 
 
 """ ---------- ARVIZ SUMMARIES ---------- """
+sigmoid_posterior = trace_sigmoid.posterior["spam_sender"].values[:, :, low_senders]
+beta_posterior = trace_beta.posterior["spam_sender"].values[:, :, low_senders]
+
 # Sigmoid model summary
 print(f"SUMMARY sigmoid model:")
 print(az.summary(trace_sigmoid, var_names=[
@@ -172,9 +184,10 @@ print(az.summary(trace_sigmoid, var_names=[
                                             "sigma_u_raw",
                                             "p_o"
                                             ]))
-print(az.summary(trace_sigmoid, var_names=[
-                                            "y"
-                                            ]))
+print(az.summary(trace_sigmoid, var_names=["spam_sender"], coords={"sender": low_senders}))
+# print(az.summary(trace_sigmoid, var_names=[
+#                                             "y"
+#                                             ]))
 
 # Beta model summary
 print(f"SUMMARY beta model:")
@@ -185,9 +198,10 @@ print(az.summary(trace_beta, var_names=[
                                         "sigma_u_raw",
                                         "p_o"
                                         ]))
-print(az.summary(trace_beta, var_names=[
-                                        "y"
-                                        ]))
+print(az.summary(trace_beta, var_names=["spam_sender"], coords={"sender": low_senders}))
+# print(az.summary(trace_beta, var_names=[
+#                                         "y"
+#                                         ]))
 
 
 
@@ -212,6 +226,21 @@ compare_dict = {"Sigmoid": loo_results_sigmoid, "Beta": loo_results_beta}
 loo_compare = az.compare(compare_dict)
 print("\nModel Comparison:")
 print(loo_compare)
+
+
+
+
+""" ---------- DISAGREEMENT CHECK ---------- """
+print("Posterior predictive comparison between models:")
+pp_sigmoid = trace_sigmoid.posterior_predictive["y"].values.mean(axis=(0,1))
+pp_beta = trace_beta.posterior_predictive["y"].values.mean(axis=(0,1))
+# print(np.abs(pp_sigmoid - pp_beta))
+
+class_sigma = (pp_sigmoid > 0.5).astype(int)
+class_beta = (pp_beta > 0.5).astype(int)
+
+disagreements = np.where(class_sigma != class_beta)[0]
+print(f"Number of disagreements between models: {len(disagreements)}")
 
 
 

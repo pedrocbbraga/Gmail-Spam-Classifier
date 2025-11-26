@@ -15,7 +15,7 @@ CLIENT_SECRET = "client_secret.json"
 TOKEN_FILE = "token_modify.json"
 LABEL_NAME = "TestSpam"
 
-emails_to_move = pd.read_csv("./emails_to_move.csv").to_numpy()
+emails_to_move = pd.read_csv("./emails_to_move_500.csv").to_numpy()
 # print(emails_to_move)
 
 # Get OAuth credentials - boilerplate from Google
@@ -70,9 +70,7 @@ def archive(client, id: str, inbox_id: str):
     return client.users().messages().modify(userId="me", id=id, body=body).execute()
 
 if __name__ == "__main__":
-    for id in tqdm(emails_to_move[2000:]):
-        print(id[0])
-        # move_to_label(client, id[0], label_id)
-        # archive(client, id[0], inbox_id)
+    for id in tqdm(emails_to_move):
+        # print(id[0])
         move_to_label(client, id[0], label_id)
         archive(client, id[0], inbox_id)
