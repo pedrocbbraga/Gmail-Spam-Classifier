@@ -7,26 +7,36 @@ It gets retrieves the list of email IDs to move to spam from spam_filter.py and 
 Inputs: spam emails to move CSV file
 Output: emails moved to spam label in Gmail
 
+Usage: e.g., from the root Gmail-Spam-Classifier directory, python3 source/main.py --N 500
+
 """
 
 import os
 import sys
 import os
-import json
-from tqdm import tqdm
 import pandas as pd
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from google.auth.transport.requests import Request
+from config import emails_to_move_path
+from tqdm import tqdm
+import argparse
+
+parser = argparse.ArgumentParser()
+parser.add_argument("--N", type=int, default=500)
+args = parser.parse_args()
+
+N = args.N
 
 # Load config
 SCOPES = ["https://www.googleapis.com/auth/gmail.modify"]
 CLIENT_SECRET = "client_secret.json"
 TOKEN_FILE = "token_modify.json"
 LABEL_NAME = "TestSpam"
+IN_FILE = emails_to_move_path(N)
 
-emails_to_move = pd.read_csv("./emails_to_move_500.csv").to_numpy()
+emails_to_move = pd.read_csv(IN_FILE).to_numpy()
 # print(len(emails_to_move))
 
 # Get OAuth credentials - boilerplate from Google

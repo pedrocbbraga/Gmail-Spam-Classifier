@@ -16,7 +16,6 @@ import os
 import json
 import sys
 import time
-import tqdm
 import unicodedata
 import re
 import pandas as pd
@@ -27,7 +26,7 @@ from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from google.auth.transport.requests import Request
-from config import dataset_path
+from config import DATA_PROCESSED, dataset_path
 import argparse
 
 # Steps:
@@ -48,7 +47,8 @@ N = args.N
 SCOPES = ["https://www.googleapis.com/auth/gmail.readonly"]
 CLIENT_SECRET = "client_secret.json"
 TOKEN_FILE = "token_read.json"
-OUT_JSONL = dataset_path(N)
+OUT_FILE = dataset_path(N)
+IN_FILE = DATA_PROCESSED / "spamtoken_library.csv"
 
 # Input
 GMAIL_QUERY  = 'in:inbox newer_than:1y'
@@ -212,7 +212,7 @@ def get_message_data(service, msg_id: str) -> Dict[str, Any]:
         clean_body_la_ele = clean_invisible_chars(clean_body_la_ele)
 
     body = clean_body_la_ele
-    spamtoken_count = count_spammy_tokens(body, open_spamtoken_library("spamtoken_library.csv"))
+    spamtoken_count = count_spammy_tokens(body, open_spamtoken_library(IN_FILE))
     url_count = len(urls)
 
 
@@ -240,4 +240,4 @@ def create_dataset(service, ids: List[str], out_file: str):
             f.write("\n")
             time.sleep(0.1)  # to respect API rate limitation
 
-create_dataset(build_client(get_creds()), ids, OUT_JSONL)
+create_dataset(build_client(get_creds()), ids, OUT_FILE)

@@ -10,6 +10,9 @@ DAGS = RESULTS / "dags"
 SPAM_RAW = ROOT / "data" / "raw" / "spam"
 SPAM_RAW_2 = ROOT / "data" / "raw" / "spam2" # if necessary, I personally only used the first spam dataset
 
+for directory in [DATA_RAW, DATA_PROCESSED, RESULTS, PLOTS, DAGS]:
+    directory.mkdir(parents=True, exist_ok=True)
+
 def dataset_path(n):
     return DATA_RAW / f"gmail_dataset_{n}.jsonl"
 

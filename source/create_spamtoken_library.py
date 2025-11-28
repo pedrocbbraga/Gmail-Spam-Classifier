@@ -14,10 +14,11 @@ Usage: e.g., from the root Gmail-Spam-Classifier directory, python3 source/creat
 import json
 from sklearn.feature_extraction.text import CountVectorizer
 import numpy as np
-from config import DATA_PROCESSED
+from config import DATA_PROCESSED, DATA_RAW
 
 THRESHOLD = 15 # MODIFY AS NEEDED!!!!
-OUT_CSV = DATA_PROCESSED / "spamtoken_library.csv"
+OUT_FILE = DATA_PROCESSED / "spamtoken_library.csv"
+IN_FILE = DATA_RAW / "spamtoken_dataset.jsonl"
 
 def load_dataset(jsonl_path: str):
     data = []
@@ -26,7 +27,7 @@ def load_dataset(jsonl_path: str):
             data.append(json.loads(line))
     return data
 
-data = load_dataset("spamtoken_dataset.jsonl")
+data = load_dataset(IN_FILE)
 
 def create_spamtoken_library(data: list) -> CountVectorizer:
     vectorizer = CountVectorizer(stop_words="english")
@@ -41,7 +42,7 @@ def create_spamtoken_library(data: list) -> CountVectorizer:
             spammy_tokens.append(word)
 
     # Save to CSV
-    with open(OUT_CSV, "w") as f:
+    with open(OUT_FILE, "w") as f:
         f.write("token\n")
         for token in spammy_tokens:
             f.write(f"{token}\n")
