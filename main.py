@@ -16,7 +16,7 @@ TOKEN_FILE = "token_modify.json"
 LABEL_NAME = "TestSpam"
 
 emails_to_move = pd.read_csv("./emails_to_move_500.csv").to_numpy()
-# print(emails_to_move)
+# print(len(emails_to_move))
 
 # Get OAuth credentials - boilerplate from Google
 # https://developers.google.com/workspace/gmail/api/quickstart/python
