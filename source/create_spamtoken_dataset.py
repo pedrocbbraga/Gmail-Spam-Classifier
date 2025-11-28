@@ -1,25 +1,37 @@
-import base64
+"""
+
+create_spamtoken_dataset.py: This module creates the input dataset for create_spamtoken_library.py
+
+It gets retrieves email metadata from a spam email dataset (pulled from Apache SpamAssassin)
+and processes the data to extract email bodies.
+
+Inputs: spam email dataset
+Output: email bodies in JSONL format
+
+Usage: e.g., from the root Gmail-Spam-Classifier directory, python3 source/create_spamtoken_dataset.py
+
+"""
+
 import os
 import json
-import sys
 import time
-import tqdm
 import unicodedata
 import re
-from typing import List, Dict, Any, Optional
 from pathlib import Path
 from bs4 import BeautifulSoup
 from email import policy
 from email.parser import BytesParser
+from config import SPAM_RAW, SPAM_RAW_2, DATA_RAW
 
 # File paths
-IDS_PATH = "./spam/"
-OUT_JSONL = "spamtoken_dataset.jsonl"
+IDS_PATH = SPAM_RAW
+# IDS_PATH = SPAM_RAW_2  # if using second spam dataset
+OUT_JSONL = DATA_RAW / "spamtoken_dataset.jsonl"
 
 ids = os.listdir(IDS_PATH)
 
 # print(ids)
-print(f"Found {len(ids)} messages")
+# print(f"Found {len(ids)} messages")
 
 # Helper function to clean invisible characters
 # https://www.fileformat.info/info/unicode/category/index.htm

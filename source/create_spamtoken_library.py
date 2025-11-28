@@ -1,10 +1,23 @@
+"""
+
+create_spamtoken_library.py: This module creates the input spam token library for create_input_dataset.py
+
+It gets retrieves the email bodies from the spamtoken dataset and processes the data to extract spammy tokens.
+
+Inputs: spam email JSONL dataset containing email bodies
+Output: spam token library in CSV format
+
+Usage: e.g., from the root Gmail-Spam-Classifier directory, python3 source/create_spamtoken_library.py
+
+"""
+
 import json
 from sklearn.feature_extraction.text import CountVectorizer
-import os
 import numpy as np
+from config import DATA_PROCESSED
 
 THRESHOLD = 15 # MODIFY AS NEEDED!!!!
-OUT_CSV = "spamtoken_library.csv"
+OUT_CSV = DATA_PROCESSED / "spamtoken_library.csv"
 
 def load_dataset(jsonl_path: str):
     data = []

@@ -1,3 +1,14 @@
+"""
+
+main.py: This module runs the process to move emails to a spam label based on the spam filter output
+
+It gets retrieves the list of email IDs to move to spam from spam_filter.py and uses the Gmail API to move them.
+
+Inputs: spam emails to move CSV file
+Output: emails moved to spam label in Gmail
+
+"""
+
 import os
 import sys
 import os

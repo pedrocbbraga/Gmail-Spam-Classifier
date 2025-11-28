@@ -1,28 +1,36 @@
+"""
+
+spam_filter.py: This module runs the naive bayes hierarchical mixture models to classify spam emails.
+
+There are two models:
+1. Sigmoid model: partial-pooling model with global shrinkage on sender spamminess
+2. Beta mode: no-pooling with a beta prior on sender spamminess
+
+Inputs: clean email data in JSONL format
+Output: list of email ids to send to spam
+
+Usage: e.g., from the root Gmail-Spam-Classifier directory, python3 source/spam_filter.py --N 500
+
+"""
+
 import arviz as az
 import pymc as pm
 import pandas as pd
 import numpy as np
-import os
 import argparse
 import matplotlib.pyplot as plt
-
-"""
-
-Inputs: clean email data, spam token library
-Purpose: runs naive bayes mixture model to determine spam emails
-Output: list of email ids to send to spam
-
-"""
+from config import dataset_path, emails_to_move_path, arviz_plots_path, dags_path
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--N", type=int, default=500)
 args = parser.parse_args()
 
 N = args.N
-OUT_FILE = (f"emails_to_move_{N}.csv")
+OUT_FILE = emails_to_move_path(N)
+IN_FILE = dataset_path(N)
 
 # Read data
-data = pd.read_json(f"./gmail_dataset_{N}.jsonl", orient="records", lines=True)
+data = pd.read_json(IN_FILE, orient="records", lines=True)
 Y = data[["id", "from", "date", "url count", "spam token count"]].to_numpy()
 
 # Extract variables
@@ -154,16 +162,15 @@ with pm.Model(coords=coords) as m_beta:
 
 
 """ ---------- HIERARCHICAL MODEL DAGs ---------- """
-output_folder_dags = "/Users/pedro/Documents/Georgia Tech OMSCS/ISYE 6420 Bayesian Statistics/Project/Gmail-Spam-Classifier/Results/DAGs"
 
 # Sigmoid model DAG
 g_sigmoid = pm.model_to_graphviz(m_sigmoid)
-g_sigmoid.render(filename=os.path.join(output_folder_dags, f"sigmoid_model_{N}"), format="png", cleanup=True)
+g_sigmoid.render(filename=dags_path("sigmoid_model", N), format="png", cleanup=True)
 # g_sigmoid.view()
 
 # Beta model DAG
 g_beta = pm.model_to_graphviz(m_beta)
-g_beta.render(filename=os.path.join(output_folder_dags, f"beta_model_{N}"), format="png", cleanup=True)
+g_beta.render(filename=dags_path("beta_model", N), format="png", cleanup=True)
 # g_beta.view()
 
 
@@ -246,28 +253,27 @@ print(f"Number of disagreements between models: {len(disagreements)}")
 
 
 """ ---------- ARVIZ PLOTS ---------- """
-output_folder_plots = "/Users/pedro/Documents/Georgia Tech OMSCS/ISYE 6420 Bayesian Statistics/Project/Gmail-Spam-Classifier/Results/Plots"
 
 # Sigmoid model posteriors
 az.plot_posterior(trace_sigmoid, var_names=["mu_alpha", "sigma_alpha", "mu_t", "mu_u", "p_o"], hdi_prob=0.95)
 plt.tight_layout()
-plt.savefig(os.path.join(output_folder_plots, f"sigmoid_model_posteriors_{N}.png"))
+plt.savefig(arviz_plots_path("sigmoid_model_posteriors", N))
 plt.close()
 
 # Sigmoid model PPC
 az.plot_ppc(trace_sigmoid, var_names=["t", "u", "o"])
-plt.savefig(os.path.join(output_folder_plots, f"sigmoid_model_ppc{N}.png"))
+plt.savefig(arviz_plots_path("sigmoid_model_ppc", N))
 plt.close()
 
 # Beta model posteriors
 az.plot_posterior(trace_beta, var_names=["mu_t", "mu_u", "p_o"], hdi_prob=0.95)
 plt.tight_layout()
-plt.savefig(os.path.join(output_folder_plots, f"beta_model_posteriors_{N}.png"))
+plt.savefig(arviz_plots_path("beta_model_posteriors", N))
 plt.close()
 
 # Beta model PPC
 az.plot_ppc(trace_beta, var_names=["t", "u", "o"])
-plt.savefig(os.path.join(output_folder_plots, f"beta_model_ppc{N}.png"))
+plt.savefig(arviz_plots_path("beta_model_ppc", N))
 plt.close()
 
 

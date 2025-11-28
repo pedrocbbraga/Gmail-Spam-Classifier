@@ -1,3 +1,16 @@
+"""
+
+create_input_dataset.py: This module creates the input dataset for spam_filter.py
+
+It gets authorization to access Gmail, retrieves email metadata, and processes emails to extract features.
+
+Inputs: Gmail data via Gmail API, spam token library
+Output: email dataset in JSONL format
+
+Usage: e.g., from the root Gmail-Spam-Classifier directory, python3 source/create_input_dataset.py --N 500
+
+"""
+
 import base64
 import os
 import json
@@ -9,13 +22,13 @@ import re
 import pandas as pd
 import numpy as np
 from typing import List, Dict, Any, Optional
-from pathlib import Path
 from bs4 import BeautifulSoup
-from sklearn.feature_extraction.text import CountVectorizer
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from google.auth.transport.requests import Request
+from config import dataset_path
+import argparse
 
 # Steps:
 # Load config
@@ -25,15 +38,21 @@ from google.auth.transport.requests import Request
 # List message IDs
 # For each ID, get: tokens, URLS, opened status, date
 
-# Load config
+parser = argparse.ArgumentParser()
+parser.add_argument("--N", type=int, default=500)
+args = parser.parse_args()
+
+N = args.N
+
+# Config
 SCOPES = ["https://www.googleapis.com/auth/gmail.readonly"]
 CLIENT_SECRET = "client_secret.json"
 TOKEN_FILE = "token_read.json"
-OUT_JSONL = "gmail_dataset_50.jsonl"
+OUT_JSONL = dataset_path(N)
 
 # Input
 GMAIL_QUERY  = 'in:inbox newer_than:1y'
-MAX_MESSAGES = 50
+MAX_MESSAGES = N
 
 # Get OAuth credentials - boilerplate from Google
 # https://developers.google.com/workspace/gmail/api/quickstart/python
