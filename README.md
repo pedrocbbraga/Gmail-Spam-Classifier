@@ -17,6 +17,7 @@ Client Secret Tutorial: https://www.youtube.com/watch?v=D8DMj2lQMwo
 
 
 How to run:
+0. Run ./scripts/fetch_data.sh - Downloads the Apache SpamAssassin public corpus into data/raw
 1. Run create_spamtoken_dataset.py - Processes and cleans Apache SpamAssassin's spam data
 2. Run create_spamtoken_library.py - Processes the above-created dataset and extracts a library of spammy tokens
 3. Run create_input_dataset.py - Extracts and cleans Gmail data for model processing
